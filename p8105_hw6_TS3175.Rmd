@@ -8,14 +8,94 @@ output: html_document
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
+library(viridis)
+library(gridExtra)
+library(modelr)
+library(mgcv)
 ```
 
-Loading in dataset
+# Problem 1
+
+Loading in dataset, create factor variables, and check for missing data
 
 ```{r}
-bwt= read.csv("birthweight.csv") %>% 
-  janitor::clean_names()
-skimr::skim(bwt)
+bwt_data = read.csv("birthweight.csv") %>% 
+  janitor::clean_names() %>% 
+  mutate(
+    babysex = factor(babysex,    levels= c("1", "2"),
+                                 labels = c("male", "female")),
+    frace =   factor(frace,      levels= c("1", "2", "3", "4", "8", "9"),
+                                 labels = c("white", "black","asian", "puerto rican", "other", "uknown")),
+    malform = factor(malform,    levels= c("0", "1"),
+                                 labels = c("absent", "present")),
+    mrace = factor(mrace,        levels= c("1", "2", "3", "4", "8", "9"),
+                                 labels = c("white", "black","asian", "puerto rican", "other", "uknown"))
+  )
+
+  skimr::skim(bwt_data)
 ```
+
+```{r}
+model = lm(bwt ~ momage + fincome, data = bwt_data) 
+model %>% 
+  broom::tidy() %>% 
+  select(term, estimate, p.value) %>% 
+  knitr::kable(digits = 3)
+
+  modelr::add_residuals(bwt_data,model) %>% 
+  modelr::add_predictions(model) %>% 
+  ggplot(aes(x = pred, y = resid)) +
+  geom_point()
+
+```
+
+```{r}
+model1= lm(bwt ~ blength + gaweeks, data=bwt_data) 
+model1 %>% 
+  broom::tidy() %>% 
+  select(term, estimate, p.value) %>% 
+  knitr::kable(digits = 3)
+
+model2= lm(bwt ~ bhead + blength + babysex + bhead*blength + bhead*babysex + blength*babysex + babysex*blength*bhead, data=bwt_data)
+
+model2 %>% 
+  broom::tidy() %>% 
+  select(term, estimate, p.value) %>% 
+  knitr::kable(digits = 3)
+```
+
+```{r}
+cv_df =
+  crossv_mc(bwt_data, 100) %>% 
+  mutate(
+    train = map(train, as_tibble),
+    test = map(test, as_tibble))
+```
+
+```{r}
+cv_df=
+ cv_df %>% 
+  mutate(model  = map(train, ~lm(bwt ~ momage + fincome, data = .x)),
+   model1 = map(train, ~lm(bwt ~ blength + gaweeks, data = .x)),
+   model2 = map(train, ~lm(bwt ~ bhead + blength + babysex + bhead*blength + bhead*babysex + blength*babysex + bhead*blength*babysex, data = as_tibble(.x)))) %>% 
+  mutate(rmse_model = map2_dbl(model, test, ~rmse(model = .x, data = .y)),
+  rmse_model1 = map2_dbl(model1, test, ~rmse(model = .x, data = .y)),
+  rmse_model2 = map2_dbl(model2, test, ~rmse(model = .x, data = .y)))
+```
+
+```{r}
+cv_df %>% 
+  select(starts_with("rmse")) %>% 
+pivot_longer(
+    everything(),
+    names_to = "model", 
+    values_to = "rmse",
+    names_prefix = "rmse_") %>% 
+  mutate(model = fct_inorder(model)) %>% 
+  ggplot(aes(x = model, y = rmse)) + geom_violin()
+```
+
+
+
 
 
