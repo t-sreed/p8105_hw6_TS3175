@@ -1,0 +1,21 @@
+---
+title: "p8105_hw6_TS3175"
+author: "Tanu"
+date: "11/20/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+```
+
+Loading in dataset
+
+```{r}
+bwt= read.csv("birthweight.csv") %>% 
+  janitor::clean_names()
+skimr::skim(bwt)
+```
+
+
