@@ -2,21 +2,23 @@
 title: "p8105_hw6_TS3175"
 author: "Tanu"
 date: "11/20/2019"
-output: html_document
+output: github_document
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
+library(p8105.datasets)
 library(viridis)
 library(gridExtra)
 library(modelr)
 library(mgcv)
+library(patchwork)
 ```
 
 # Problem 1
 
-Loading in dataset, create factor variables, and check for missing data
+Loading in dataset, creating factor variables, and checking for missing data
 
 ```{r}
 bwt_data = read.csv("birthweight.csv") %>% 
@@ -35,6 +37,8 @@ bwt_data = read.csv("birthweight.csv") %>%
   skimr::skim(bwt_data)
 ```
 
+Created a model for birthweight based on mother's age and family income because these are factors noted in the literature as associated with stress and ultimately baby health. Then plotted residuals against fitted values.
+
 ```{r}
 model = lm(bwt ~ momage + fincome, data = bwt_data) 
 model %>% 
@@ -48,6 +52,8 @@ model %>%
   geom_point()
 
 ```
+
+Made comparisons of the following models in terms of the cross-validated prediction error using crossv_mc and functions in purrr.
 
 ```{r}
 model1= lm(bwt ~ blength + gaweeks, data=bwt_data) 
@@ -96,6 +102,72 @@ pivot_longer(
 ```
 
 
+Model 2 appears to be the best model.
+
+# Problem 2
+
+```{r message=FALSE}
+weather_df = 
+  rnoaa::meteo_pull_monitors(
+    c("USW00094728"),
+    var = c("PRCP", "TMIN", "TMAX"), 
+    date_min = "2017-01-01",
+    date_max = "2017-12-31") %>%
+  mutate(
+    name = recode(id, USW00094728 = "CentralPark_NY"),
+    tmin = tmin / 10,
+    tmax = tmax / 10) %>%
+  select(name, id, everything())
+```
 
 
+Used 5000 bootstrap samples and, for each bootstrap sample, produced estimates of these two quantities. Then, I plotted the distribution of my estimates.
 
+```{r}
+samples = weather_df %>% modelr::bootstrap(n = 500) %>% 
+  mutate(
+    models = map(strap, ~ lm(tmax ~ tmin, data = .x)),
+    results = map(models, broom::tidy),
+    glance = map(models, broom::glance)) %>% 
+  select(results, glance, .id) %>% 
+  unnest(results) %>% 
+  pivot_wider( 
+    names_from = term,
+    values_from = c(estimate, std.error, glance),
+    id_cols = .id, 
+    ) %>%
+  janitor::clean_names() %>%
+  unnest(c(glance_intercept), .names_repair = "universal") %>% 
+  mutate(
+    log_b0_b1 = log(estimate_intercept * estimate_tmin)
+  )  
+```
+
+```{r}
+rsq = samples %>% 
+  ggplot(aes(x = r.squared)) + 
+  geom_density() + 
+  theme_minimal() 
+betas = samples %>% 
+  ggplot(aes(x = log_b0_b1)) + 
+  geom_density() + 
+  theme_minimal() 
+
+rsq + betas
+```
+
+The plots above appear to be normally distributed and unimodal. The r squared distribution has a median of approximately 0.915 while the log_b0_b1 has a median of approximately 2.015. 
+
+
+Then, I used the 5000 bootstrap estimates, identify the 2.5% and 97.5% quantiles to provide a 95% confidence interval for r̂ 2 and log(β̂ 0∗β̂ 1).
+
+```{r}
+samples %>% 
+  pull(r.squared) %>% 
+  quantile(c(0.025, 0.975)) %>% 
+  knitr::kable(col.names = "R-Squared")
+samples %>% 
+  pull(log_b0_b1) %>% 
+  quantile(c(0.025, 0.975)) %>% 
+  knitr::kable(col.names = "Log(B0*B1)")
+```
